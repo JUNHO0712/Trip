@@ -86,8 +86,7 @@ export default function Main() {
       >
         <div className='px-4 py-6 mx-auto max-w-7xl'>
           <div className='flex gap-2'>
-            <div className='text-3xl'>☁️</div>
-            <h1 className='mb-4 text-2xl font-bold'>GoormTrip</h1>
+            <h1 className='mb-4 text-2xl font-bold'>Trip</h1>
           </div>
           <SearchBar value={search} onSearch={setSearch} />
           <div className='mt-4'>

@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # [서비스 1] 메인 포털 (상품 검색/상세)
+  trip-main:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_SERVICE_NAME=MAIN_PORTAL
+
+  # [서비스 2] 장바구니 서비스
+  trip-cart:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:80"
+    environment:
+      - VITE_SERVICE_NAME=CART_SERVICE
+
+  # [서비스 3] 결제 전용 서비스
+  trip-payment:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3002:80"
+    environment:
+      - VITE_SERVICE_NAME=PAYMENT_SERVICE
+
+networks:
+  default:
+    name: goorm-trip-net

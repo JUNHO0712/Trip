@@ -1,0 +1,3 @@
+k8s-idp/
+node_modules/
+.env

@@ -1,65 +1,53 @@
 version: '3.8'
 
 services:
-  # [1] 데이터베이스 추가 (PostgreSQL)
-  trip-db:
-    image: postgres:15-alpine
-    container_name: trip-db-container
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password  # 비밀번호 설정
-      - POSTGRES_DB=trip_db        # 데이터베이스 이름
-    ports:
-      - "5432:5432"
-
-  # [2] 백엔드 서비스 (이름을 trip-backend로 변경)
+  # [2] 백엔드 서비스
   trip-backend:
-    build:
-      context: ./trip-backend
-      dockerfile: Dockerfile
+    image: junho010712/trip-backend:latest
     container_name: trip-backend-container
     ports:
       - "8080:8080"
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://trip-db:5432/trip_db
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/trip_db
       - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=password
-    depends_on:
-      - trip-db  # DB가 먼저 켜져야 함
+      - SPRING_DATASOURCE_PASSWORD=1771
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=none
+    networks:
+      - goorm-trip-net
 
-  # [3] 프론트엔드 메인
+  # [3] 프론트엔드 메인 (3000)
   trip-main:
-    build:
-      context: ./trip-front
-      dockerfile: Dockerfile
+    image: junho010712/trip-front:latest
     container_name: trip-main-container
     ports:
       - "3000:80"
     environment:
       - VITE_SERVICE_NAME=MAIN_PORTAL
+    networks:
+      - goorm-trip-net
 
   # [4] 프론트엔드 장바구니 (3001)
   trip-cart:
-    build:
-      context: ./trip-front
-      dockerfile: Dockerfile
+    image: junho010712/trip-front:latest
     container_name: trip-cart-container
     ports:
       - "3001:80"
     environment:
       - VITE_SERVICE_NAME=CART_SERVICE
+    networks:
+      - goorm-trip-net
 
   # [5] 프론트엔드 결제 (3002)
   trip-payment:
-    build:
-      context: ./trip-front
-      dockerfile: Dockerfile
+    image: junho010712/trip-front:latest
     container_name: trip-payment-container
     ports:
       - "3002:80"
     environment:
       - VITE_SERVICE_NAME=PAYMENT_SERVICE
+    networks:
+      - goorm-trip-net
 
 networks:
-  default:
-    name: goorm-trip-net
+  goorm-trip-net:
+    driver: bridge

@@ -14,20 +14,12 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(@NonNull CorsRegistry registry) {
 
-                registry.addMapping("/**")
-                        .allowedOrigins(
-                                "http://localhost:3000",
-                                "http://localhost:3001",
-                                "http://localhost:3002",
-                                "http://localhost:3003",
-                                "http://localhost:5173",
-                                "http://localhost:8080",
-                                "https://goorm-trip-front.vercel.app"
-                        )
-                        .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH")
-                        .allowedHeaders("*")
-                        .allowCredentials(true)
-                        .maxAge(3600);
+               registry.addMapping("/**")
+            .allowedOriginPatterns("*") // 모든 도메인과 포트 허용
+            .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
+            .allowedHeaders("*")
+            .allowCredentials(true)
+            .maxAge(3600);
             }
         };
     }

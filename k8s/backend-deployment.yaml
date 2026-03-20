@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: trip-backend-service
+  namespace: trip-app
 spec:
   # 외부 접속을 위해 ClusterIP에서 NodePort로 변경합니다.
   type: NodePort 
@@ -42,3 +43,10 @@ spec:
           value: "1771" # DB 설정과 일치시킨 비밀번호입니다.
         - name: SPRING_JPA_HIBERNATE_DDL_AUTO
           value: "none"
+        # --- 모니터링을 위한 OTel 설정 추가 ---
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "alloy.monitoring.svc.cluster.local:4317" 
+        - name: OTEL_SERVICE_NAME
+          value: "trip-backend-service"
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: "grpc"

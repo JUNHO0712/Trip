@@ -2,8 +2,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: trip-main-service
+  namespace: trip-app
 spec:
-  type: LoadBalancer # 외부에서 3000포트로 접속하기 위해 설정
+  type: NodePort # 외부에서 3000포트로 접속하기 위해 설정
   selector:
     app: trip-main
   ports:
@@ -15,6 +16,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: trip-main
+  namespace: trip-app
 spec:
   replicas: 1
   selector:

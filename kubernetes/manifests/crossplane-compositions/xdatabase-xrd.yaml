@@ -1,0 +1,46 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xdatabases.k8s-idp.example.org
+spec:
+  group: k8s-idp.example.org
+  names:
+    kind: XDatabase
+    plural: xdatabases
+    singular: xdatabase
+  claimNames:
+    kind: Database
+    plural: databases
+    singular: database
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name of the Cloud SQL instance
+                databaseVersion:
+                  type: string
+                  description: Database version
+                  default: POSTGRES_15
+                tier:
+                  type: string
+                  description: Machine tier
+                  default: db-custom-1-3840
+                region:
+                  type: string
+                  description: Region for the database
+                  default: us-central1
+                diskSize:
+                  type: integer
+                  description: Disk size in GB
+                  default: 20
+              required:
+                - name

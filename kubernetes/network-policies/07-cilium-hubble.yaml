@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cilium-allow
+  namespace: kube-system
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: hubble-relay
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from: []
+      ports:
+        - protocol: TCP
+          port: 4245
+  egress:
+    # Cilium agent uses hostNetwork, so podSelector won't match — allow by port only
+    - ports:
+        - protocol: TCP
+          port: 4244
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+

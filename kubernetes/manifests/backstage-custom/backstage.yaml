@@ -1,0 +1,328 @@
+# Custom Backstage Deployment
+# Using locally built image with minimal plugins
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backstage
+  namespace: backstage
+automountServiceAccountToken: true
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backstage-read-crossplane
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets", "namespaces", "persistentvolumeclaims", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apiextensions.crossplane.io"]
+    resources: ["compositeresourcedefinitions", "compositions", "claims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["k8s-idp.example.org"]
+    resources: ["gcpinstances", "buckets", "clusters", "databases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["k8s-idp.example.org"]
+    resources: ["xgcpinstances", "xbuckets", "xclusters", "xdatabases"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backstage-read-crossplane
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: backstage-read-crossplane
+subjects:
+  - kind: ServiceAccount
+    name: backstage
+    namespace: backstage
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backstage-postgresql
+  namespace: backstage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backstage-postgresql
+  namespace: backstage
+type: Opaque
+stringData:
+  postgresql-password: backstage123
+  postgresql-postgres-password: backstage123
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage-postgresql
+  namespace: backstage
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backstage-postgresql
+  template:
+    metadata:
+      labels:
+        app: backstage-postgresql
+    spec:
+      containers:
+      - name: postgresql
+        image: postgres:15-alpine
+        env:
+        - name: POSTGRES_USER
+          value: backstage
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: backstage-postgresql
+              key: postgresql-password
+        - name: POSTGRES_DB
+          value: backstage
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: postgresql-data
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: postgresql-data
+        persistentVolumeClaim:
+          claimName: backstage-postgresql
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage-postgresql
+  namespace: backstage
+spec:
+  selector:
+    app: backstage-postgresql
+  ports:
+  - port: 5432
+    targetPort: 5432
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backstage-backend-secrets
+  namespace: backstage
+type: Opaque
+stringData:
+  POSTGRES_HOST: backstage-postgresql
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: backstage
+  POSTGRES_PASSWORD: backstage123
+  POSTGRES_DB: backstage
+  BACKEND_SECRET: "dev-secret-key-change-in-production"
+  GITHUB_TOKEN: ""
+  OIDC_CLIENT_SECRET: "backstage-client-secret-12345"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage-backend
+  namespace: backstage
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backstage-backend
+  template:
+    metadata:
+      labels:
+        app: backstage-backend
+    spec:
+      serviceAccountName: backstage
+      containers:
+      - name: backstage
+        image: kylekim1223/backstage-backend:latest
+        imagePullPolicy: Always
+        envFrom:
+        - secretRef:
+            name: backstage-backend-secrets
+        volumeMounts:
+        - name: production-config
+          mountPath: /app/app-config.production.yaml
+          subPath: app-config.production.yaml
+        ports:
+        - containerPort: 7007
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        readinessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 7007
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 7007
+          initialDelaySeconds: 60
+          periodSeconds: 15
+      volumes:
+      - name: production-config
+        configMap:
+          name: backstage-production-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage-backend
+  namespace: backstage
+spec:
+  type: NodePort
+  selector:
+    app: backstage-backend
+  ports:
+  - port: 7007
+    targetPort: 7007
+    nodePort: 30070
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-production-config
+  namespace: backstage
+data:
+  app-config.production.yaml: |
+    app:
+      baseUrl: http://100.64.0.1:30070
+      title: K8S-IDP Developer Portal
+    
+    backend:
+      baseUrl: http://100.64.0.1:30070
+      listen: ':7007'
+      cors:
+        origin: http://100.64.0.1:30070
+      csp:
+        upgrade-insecure-requests: false
+      database:
+        client: pg
+        connection:
+          host: ${POSTGRES_HOST}
+          port: ${POSTGRES_PORT}
+          user: ${POSTGRES_USER}
+          password: ${POSTGRES_PASSWORD}
+          database: ${POSTGRES_DB}
+    
+    auth:
+      environment: production
+      session:
+        secret: ${BACKEND_SECRET}
+      providers:
+        oidc:
+          production:
+            metadataUrl: http://100.64.0.1:30556/.well-known/openid-configuration
+            clientId: backstage
+            clientSecret: ${OIDC_CLIENT_SECRET}
+            prompt: auto
+            signIn:
+              resolvers:
+                - resolver: emailLocalPartMatchingUserEntityName
+                  dangerouslyAllowSignInWithoutUserInCatalog: true
+    
+    proxy:
+      '/kubecost':
+        target: http://kubecost-frontend.kubecost.svc.cluster.local:9090
+        changeOrigin: true
+    
+    kubecost:
+      baseUrl: /api/proxy/kubecost
+    
+    catalog:
+      locations:
+        - type: file
+          target: ./examples/entities.yaml
+        - type: file
+          target: ./examples/template/template.yaml
+          rules:
+            - allow: [Template]
+        - type: file
+          target: ./examples/org.yaml
+          rules:
+            - allow: [User, Group]
+        - type: file
+          target: ./templates/service-wizard/template.yaml
+          rules:
+            - allow: [Template]
+        - type: file
+          target: ./templates/simple-server/template.yaml
+          rules:
+            - allow: [Template]
+        - type: file
+          target: ./templates/infrastructure-only/template.yaml
+          rules:
+            - allow: [Template]
+        - type: file
+          target: ./templates/service/template.yaml
+          rules:
+            - allow: [Template]
+        - type: file
+          target: ./templates/service-with-infra/template.yaml
+          rules:
+            - allow: [Template]
+    
+    kubernetes:
+      serviceLocatorMethod:
+        type: multiTenant
+      clusterLocatorMethods:
+        - type: config
+          clusters:
+            - name: k8s-idp
+              url: https://kubernetes.default.svc
+              authProvider: serviceAccount
+              skipTLSVerify: true
+              skipMetricsLookup: true
+    
+    permission:
+      enabled: true

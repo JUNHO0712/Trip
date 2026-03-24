@@ -50,3 +50,5 @@ _test/
 # Kubeconfig files with tokens
 kubeconfig/kubeconfig-*
 !kubeconfig/README.md
+
+로컬실행.txt

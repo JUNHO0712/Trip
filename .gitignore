@@ -50,3 +50,4 @@ _test/
 # Kubeconfig files with tokens
 kubeconfig/kubeconfig-*
 !kubeconfig/README.md
+__pycache__

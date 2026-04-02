@@ -66,3 +66,7 @@ spec:
           value: "none" # 메트릭 전송 끄기
         - name: OTEL_LOGS_EXPORTER
           value: "otlp" # 로그 전송 설정
+        - name: OTEL_TRACES_EXPORTER
+          value: "otlp"
+        - name: OTEL_TRACES_SAMPLER
+          value: "always_on"

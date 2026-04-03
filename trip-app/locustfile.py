@@ -1,5 +1,6 @@
 import os
 from datetime import date, timedelta
+from urllib.parse import urlparse
 
 from locust import HttpUser, between, task
 
@@ -16,8 +17,26 @@ class TripUser(HttpUser):
     wait_time = between(1, 3)
     host = os.getenv("TRIP_HOST", DEFAULT_HOST)
 
+    def on_start(self):
+        parsed = urlparse(self.host)
+        requested_path = parsed.path.rstrip("/")
+        if parsed.scheme and parsed.netloc:
+            self.host = f"{parsed.scheme}://{parsed.netloc}"
+
+        self.selected_scenario = self._resolve_scenario(requested_path)
+
     def _should_run(self, scenario_name):
-        return ERROR_SCENARIO in ("all", scenario_name)
+        selected = getattr(self, "selected_scenario", ERROR_SCENARIO)
+        return selected in ("all", scenario_name)
+
+    def _resolve_scenario(self, requested_path):
+        if requested_path.endswith("/orders/payment/retry"):
+            return "payment_retry"
+        if requested_path.endswith("/orders/payment"):
+            return "payment"
+        if requested_path.endswith("/carts"):
+            return "cart"
+        return ERROR_SCENARIO
 
     def _departure_date(self):
         return (date.today() + timedelta(days=7)).isoformat()
@@ -88,6 +107,34 @@ class TripUser(HttpUser):
             json=payment_payload,
             headers=DEFAULT_HEADERS,
             name="/orders/payment",
+        )
+
+    @task(1)
+    def payment_retry_error(self):
+        if not self._should_run("payment_retry"):
+            return
+
+        order_id, total_amount = self._create_order_preview()
+
+        payment_payload = {
+            "orderId": order_id,
+            "totalAmount": total_amount,
+            "paymentMethod": "CARD",
+        }
+
+        first_response = self.client.post(
+            "/api/v1/orders/payment",
+            json=payment_payload,
+            headers=DEFAULT_HEADERS,
+            name="/orders/payment/first-success",
+        )
+        first_response.raise_for_status()
+
+        self.client.post(
+            "/api/v1/orders/payment",
+            json=payment_payload,
+            headers=DEFAULT_HEADERS,
+            name="/orders/payment/retry",
         )
 
     @task(1)

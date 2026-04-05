@@ -30,11 +30,11 @@ class TripUser(HttpUser):
         data = res.json().get("data", [])
         return data[0]
 
-    def _preview(self, product_id):
+    def _preview(self, productId):
         payload = {
             "products": [
                 {
-                    "productId": product_id,
+                    "productId": productId,
                     "quantity": 1,
                     "departureDate": self._departure_date(),
                 }
@@ -55,7 +55,7 @@ class TripUser(HttpUser):
     @task
     def run_scenario(self):
         product = self._get_product()
-        order_id, total_price = self._preview(product["product_id"])
+        order_id, total_price = self._preview(product["productId"])
 
         # 🔥 1️⃣ 정상 시나리오
         if SCENARIO == "success":

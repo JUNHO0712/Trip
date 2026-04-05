@@ -1,124 +1,46 @@
-import os
-from datetime import date, timedelta
-from locust import HttpUser, between, task
+from locust import HttpUser, task, between, tag
 
-DEFAULT_HOST = "http://100.64.0.1:30088"
+class TracingDemoUser(HttpUser):
+    wait_time = between(1, 2)
 
-HEADERS = {
-    "Content-Type": "application/json",
-    "X-User-Id": "1",
-}
+    # 기본 host는 Locust 요구사항 때문에만 둡니다.
+    # 실제 요청은 각 서비스의 절대 URL(NodePort)로 직접 보냅니다.
+    host = "http://100.64.0.1:30088"
 
-# 실행 시 시나리오 선택
-SCENARIO = os.getenv("TRIP_ERROR_SCENARIO", "payment")
+    headers = {
+        "Content-Type": "application/json",
+        "X-User-Id": "1",
+    }
 
-
-class TripUser(HttpUser):
-    wait_time = between(1, 1)
-    host = DEFAULT_HOST
-
-    def _departure_date(self):
-        return (date.today() + timedelta(days=7)).isoformat()
-
-    def _get_product(self):
-        res = self.client.get(
-            "/api/v1/products",
-            headers=HEADERS,
-            name="1. GET /products",
-        )
-        res.raise_for_status()
-
-        data = res.json().get("data", [])
-        if not data:
-            raise Exception("상품 없음")
-
-        product = data[0]
-
-        # 🔥 snake_case 기준으로 가져오기
-        product_id = product.get("product_id")
-
-        if not product_id:
-            raise Exception(f"product_id 못찾음: {product}")
-
-        return product_id
-
-    def _preview(self, product_id):
-        payload = {
-            "products": [
-                {
-                    "product_id": product_id,   # 🔥 핵심 수정
-                    "quantity": 1,
-                    "departureDate": self._departure_date(),  # 🔥 핵심 수정
-                }
-            ]
-        }
-
-        res = self.client.post(
-            "/api/v1/orders/preview",
-            json=payload,
-            headers=HEADERS,
-            name="2. POST /orders/preview",
-        )
-
-        if res.status_code != 200:
-            print("❌ preview 실패:", res.text)
-            return None, None
-
-        data = res.json().get("data", {})
-        return data.get("order_number"), data.get("total_price")
+    @tag("backend")
     @task
-    def run_scenario(self):
-        product_id = self._get_product()
-        order_id, total_price = self._preview(product_id)
+    def backend_500(self):
+        # 장애 대상: trip-backend 파드
+        # 설명: 백엔드에 실제 존재하는 테스트용 강제 에러 엔드포인트 호출
+        self.client.get(
+            "http://100.64.0.1:30088/error-test?test=true",
+            headers=self.headers,
+            name="trip-backend 500",
+        )
 
-        # preview 실패하면 종료
-        if not order_id:
-            return
+    @tag("cart")
+    @task
+    def cart_404(self):
+        # 장애 대상: trip-cart 파드
+        # 설명: trip-cart의 NodePort(31371)로 없는 경로를 직접 호출하여 404 유도
+        self.client.get(
+            "http://100.64.0.1:31371/wrong-path-demo",
+            headers=self.headers,
+            name="trip-cart 404",
+        )
 
-        # 🔥 1️⃣ 정상 시나리오
-        if SCENARIO == "success":
-            payload = {
-                "orderId": order_id,
-                "totalAmount": total_price,
-                "paymentMethod": "CARD",
-            }
-
-            self.client.post(
-                "/api/v1/orders/payment",
-                json=payload,
-                headers=HEADERS,
-                name="3. POST /orders/payment (SUCCESS)",
-            )
-
-        # 🔥 2️⃣ 결제 에러 (트레이싱용 ⭐ 핵심)
-        elif SCENARIO == "payment":
-            payload = {
-                "orderId": order_id,
-                "totalAmount": total_price + 1,  # ❌ 의도적 에러
-                "paymentMethod": "CARD",
-            }
-
-            self.client.post(
-                "/api/v1/orders/payment",
-                json=payload,
-                headers=HEADERS,
-                name="3. POST /orders/payment (ERROR)",
-            )
-
-        # 🔥 3️⃣ 장바구니 에러
-        elif SCENARIO == "cart":
-            payload = {
-                "product_id": 999999,
-                "quantity": 1,
-                "departure_date": self._departure_date(),
-            }
-
-            self.client.post(
-                "/api/v1/carts",
-                json=payload,
-                headers=HEADERS,
-                name="CART ERROR",
-            )
-
-        # 🔥 한 번 실행하고 종료 (데모용)
-        self.environment.runner.quit()
+    @tag("payment")
+    @task
+    def payment_404(self):
+        # 장애 대상: trip-payment 파드
+        # 설명: trip-payment의 NodePort(30839)로 없는 경로를 직접 호출하여 404 유도
+        self.client.get(
+            "http://100.64.0.1:30839/wrong-path-demo",
+            headers=self.headers,
+            name="trip-payment 404",
+        )

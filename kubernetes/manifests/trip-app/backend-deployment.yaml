@@ -43,7 +43,7 @@ spec:
     spec:
       containers:
       - name: trip-backend
-        image: kylekim1223/trip-backend:2026-04-02
+        image: kylekim1223/trip-backend:2026-04-06
         imagePullPolicy: Always
         ports:
         - containerPort: 8080

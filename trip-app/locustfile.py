@@ -11,32 +11,45 @@ DEFAULT_HEADERS = {
     "X-User-Id": "1",
 }
 ERROR_SCENARIO = os.getenv("TRIP_ERROR_SCENARIO", "all").lower()
+REQUESTED_HOST = os.getenv("TRIP_HOST", DEFAULT_HOST)
+
+
+def _resolve_scenario_from_path(requested_path):
+    if requested_path.endswith("/orders/payment/retry"):
+        return "payment_retry"
+    if requested_path.endswith("/orders/payment"):
+        return "payment"
+    if requested_path.endswith("/carts"):
+        return "cart"
+    return ERROR_SCENARIO
+
+
+def _normalize_host(requested_host):
+    parsed = urlparse(requested_host)
+    requested_path = parsed.path.rstrip("/")
+    if parsed.scheme and parsed.netloc:
+        normalized_host = f"{parsed.scheme}://{parsed.netloc}"
+        return normalized_host, _resolve_scenario_from_path(requested_path)
+
+    return requested_host, ERROR_SCENARIO
+
+
+NORMALIZED_HOST, DEFAULT_SELECTED_SCENARIO = _normalize_host(REQUESTED_HOST)
 
 
 class TripUser(HttpUser):
     wait_time = between(1, 3)
-    host = os.getenv("TRIP_HOST", DEFAULT_HOST)
+    host = NORMALIZED_HOST
 
     def on_start(self):
-        parsed = urlparse(self.host)
-        requested_path = parsed.path.rstrip("/")
-        if parsed.scheme and parsed.netloc:
-            self.host = f"{parsed.scheme}://{parsed.netloc}"
-
-        self.selected_scenario = self._resolve_scenario(requested_path)
+        self.selected_scenario = DEFAULT_SELECTED_SCENARIO
 
     def _should_run(self, scenario_name):
         selected = getattr(self, "selected_scenario", ERROR_SCENARIO)
         return selected in ("all", scenario_name)
 
     def _resolve_scenario(self, requested_path):
-        if requested_path.endswith("/orders/payment/retry"):
-            return "payment_retry"
-        if requested_path.endswith("/orders/payment"):
-            return "payment"
-        if requested_path.endswith("/carts"):
-            return "cart"
-        return ERROR_SCENARIO
+        return _resolve_scenario_from_path(requested_path)
 
     def _departure_date(self):
         return (date.today() + timedelta(days=7)).isoformat()

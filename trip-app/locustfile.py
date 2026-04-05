@@ -48,7 +48,7 @@ class TripUser(HttpUser):
                 {
                     "product_id": product_id,   # 🔥 핵심 수정
                     "quantity": 1,
-                    "departure_date": self._departure_date(),  # 🔥 핵심 수정
+                    "departureDate": self._departure_date(),  # 🔥 핵심 수정
                 }
             ]
         }

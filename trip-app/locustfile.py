@@ -2,7 +2,7 @@ import os
 from datetime import date, timedelta
 from urllib.parse import urlparse
 
-from locust import HttpUser, between, task
+from locust import HttpUser, task
 
 
 DEFAULT_HOST = "http://100.64.0.1:30088"
@@ -10,46 +10,23 @@ DEFAULT_HEADERS = {
     "Content-Type": "application/json",
     "X-User-Id": "1",
 }
-ERROR_SCENARIO = os.getenv("TRIP_ERROR_SCENARIO", "all").lower()
+
+ERROR_SCENARIO = os.getenv("TRIP_ERROR_SCENARIO", "payment").lower()
 REQUESTED_HOST = os.getenv("TRIP_HOST", DEFAULT_HOST)
-
-
-def _resolve_scenario_from_path(requested_path):
-    if requested_path.endswith("/orders/payment/retry"):
-        return "payment_retry"
-    if requested_path.endswith("/orders/payment"):
-        return "payment"
-    if requested_path.endswith("/carts"):
-        return "cart"
-    return ERROR_SCENARIO
 
 
 def _normalize_host(requested_host):
     parsed = urlparse(requested_host)
-    requested_path = parsed.path.rstrip("/")
     if parsed.scheme and parsed.netloc:
-        normalized_host = f"{parsed.scheme}://{parsed.netloc}"
-        return normalized_host, _resolve_scenario_from_path(requested_path)
-
-    return requested_host, ERROR_SCENARIO
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return requested_host
 
 
-NORMALIZED_HOST, DEFAULT_SELECTED_SCENARIO = _normalize_host(REQUESTED_HOST)
+NORMALIZED_HOST = _normalize_host(REQUESTED_HOST)
 
 
 class TripUser(HttpUser):
-    wait_time = between(1, 3)
     host = NORMALIZED_HOST
-
-    def on_start(self):
-        self.selected_scenario = DEFAULT_SELECTED_SCENARIO
-
-    def _should_run(self, scenario_name):
-        selected = getattr(self, "selected_scenario", ERROR_SCENARIO)
-        return selected in ("all", scenario_name)
-
-    def _resolve_scenario(self, requested_path):
-        return _resolve_scenario_from_path(requested_path)
 
     def _departure_date(self):
         return (date.today() + timedelta(days=7)).isoformat()
@@ -62,23 +39,21 @@ class TripUser(HttpUser):
         )
         response.raise_for_status()
 
-        payload = response.json()
-        products = payload.get("data") or []
+        products = response.json().get("data") or []
         if not products:
-            raise RuntimeError("상품 목록이 비어 있어 오류 시나리오를 진행할 수 없습니다.")
+            raise RuntimeError("상품 없음")
 
         return products[0]
 
     def _create_order_preview(self):
         product = self._get_first_product()
-        quantity = 1
         product_id = product["product_id"]
 
-        preview_payload = {
+        payload = {
             "products": [
                 {
                     "productId": product_id,
-                    "quantity": quantity,
+                    "quantity": 1,
                     "departureDate": self._departure_date(),
                 }
             ]
@@ -86,84 +61,80 @@ class TripUser(HttpUser):
 
         response = self.client.post(
             "/api/v1/orders/preview",
-            json=preview_payload,
+            json=payload,
             headers=DEFAULT_HEADERS,
             name="/orders/preview",
         )
         response.raise_for_status()
 
-        order_data = response.json().get("data") or {}
-        order_id = order_data.get("orderId") or order_data.get("orderNumber")
-        total_price = order_data.get("totalPrice")
-        if not order_id:
-            raise RuntimeError("주문 미리보기 응답에서 orderId를 찾을 수 없습니다.")
-        if total_price is None:
-            raise RuntimeError("주문 미리보기 응답에서 totalPrice를 찾을 수 없습니다.")
+        data = response.json().get("data") or {}
+        return data["orderId"], data["totalPrice"]
 
-        return order_id, total_price
+    @task
+    def run_scenario(self):
+        if ERROR_SCENARIO == "payment":
+            self.payment_error()
 
-    @task(1)
+        elif ERROR_SCENARIO == "payment_retry":
+            self.payment_retry_error()
+
+        elif ERROR_SCENARIO == "cart":
+            self.cart_error()
+
+        # 🔥 핵심: 1번 실행 후 종료
+        self.environment.runner.quit()
+
+    # ------------------------
+    # 시나리오들
+    # ------------------------
+
     def payment_error(self):
-        if not self._should_run("payment"):
-            return
-
-        order_id, total_amount = self._create_order_preview()
-
-        payment_payload = {
-            "orderId": order_id,
-            "totalAmount": total_amount + 1,
-            "paymentMethod": "CARD",
-        }
+        order_id, total = self._create_order_preview()
 
         self.client.post(
             "/api/v1/orders/payment",
-            json=payment_payload,
+            json={
+                "orderId": order_id,
+                "totalAmount": total + 1,  # ❌ 일부러 틀림
+                "paymentMethod": "CARD",
+            },
             headers=DEFAULT_HEADERS,
-            name="/orders/payment",
+            name="/orders/payment (error)",
         )
 
-    @task(1)
     def payment_retry_error(self):
-        if not self._should_run("payment_retry"):
-            return
+        order_id, total = self._create_order_preview()
 
-        order_id, total_amount = self._create_order_preview()
-
-        payment_payload = {
+        payload = {
             "orderId": order_id,
-            "totalAmount": total_amount,
+            "totalAmount": total,
             "paymentMethod": "CARD",
         }
 
-        first_response = self.client.post(
-            "/api/v1/orders/payment",
-            json=payment_payload,
-            headers=DEFAULT_HEADERS,
-            name="/orders/payment/first-success",
-        )
-        first_response.raise_for_status()
-
+        # 정상 결제
         self.client.post(
             "/api/v1/orders/payment",
-            json=payment_payload,
+            json=payload,
             headers=DEFAULT_HEADERS,
-            name="/orders/payment/retry",
+            name="/orders/payment (success)",
         )
 
-    @task(1)
+        # ❌ 중복 결제
+        self.client.post(
+            "/api/v1/orders/payment",
+            json=payload,
+            headers=DEFAULT_HEADERS,
+            name="/orders/payment (retry error)",
+        )
+
     def cart_error(self):
-        if not self._should_run("cart"):
-            return
-
-        cart_payload = {
-            "productId": 999999,
-            "quantity": 1,
-            "departureDate": self._departure_date(),
-        }
-
         self.client.post(
             "/api/v1/carts",
-            json=cart_payload,
+            json={
+                "productId": 999999,  # ❌ 존재하지 않음
+                "quantity": 1,
+                "departureDate": self._departure_date(),
+            },
             headers=DEFAULT_HEADERS,
-            name="/carts",
+            name="/carts (error)",
         )

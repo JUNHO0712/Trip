@@ -34,8 +34,8 @@ class TripUser(HttpUser):
 
         product = data[0]
 
-        # 🔥 snake_case / camelCase 둘 다 대응
-        product_id = product.get("productId") or product.get("product_id")
+        # 🔥 snake_case 기준으로 가져오기
+        product_id = product.get("product_id")
 
         if not product_id:
             raise Exception(f"product_id 못찾음: {product}")
@@ -46,9 +46,9 @@ class TripUser(HttpUser):
         payload = {
             "products": [
                 {
-                    "productId": product_id,
+                    "product_id": product_id,   # 🔥 핵심 수정
                     "quantity": 1,
-                    "departureDate": self._departure_date(),
+                    "departure_date": self._departure_date(),  # 🔥 핵심 수정
                 }
             ]
         }
@@ -60,7 +60,6 @@ class TripUser(HttpUser):
             name="2. POST /orders/preview",
         )
 
-        # ❗ 트레이싱 위해 실패해도 죽지 않게
         if res.status_code != 200:
             print("❌ preview 실패:", res.text)
             return None, None
@@ -73,7 +72,7 @@ class TripUser(HttpUser):
         product_id = self._get_product()
         order_id, total_price = self._preview(product_id)
 
-        # preview 실패 시 종료 (흐름 유지)
+        # preview 실패하면 종료
         if not order_id:
             return
 
@@ -92,7 +91,7 @@ class TripUser(HttpUser):
                 name="3. POST /orders/payment (SUCCESS)",
             )
 
-        # 🔥 2️⃣ 결제 에러 (추천 ⭐)
+        # 🔥 2️⃣ 결제 에러 (트레이싱용 ⭐ 핵심)
         elif SCENARIO == "payment":
             payload = {
                 "orderId": order_id,
@@ -110,9 +109,9 @@ class TripUser(HttpUser):
         # 🔥 3️⃣ 장바구니 에러
         elif SCENARIO == "cart":
             payload = {
-                "productId": 999999,
+                "product_id": 999999,
                 "quantity": 1,
-                "departureDate": self._departure_date(),
+                "departure_date": self._departure_date(),
             }
 
             self.client.post(
@@ -122,5 +121,5 @@ class TripUser(HttpUser):
                 name="CART ERROR",
             )
 
-        # 🔥 한 번만 실행하고 종료 (트레이싱용)
+        # 🔥 한 번 실행하고 종료 (데모용)
         self.environment.runner.quit()

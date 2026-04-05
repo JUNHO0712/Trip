@@ -65,8 +65,7 @@ class TripUser(HttpUser):
             return None, None
 
         data = res.json().get("data", {})
-        return data.get("orderId"), data.get("totalPrice")
-
+        return data.get("order_number"), data.get("total_price")
     @task
     def run_scenario(self):
         product_id = self._get_product()

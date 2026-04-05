@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from locust import HttpUser, between, task
 
 
-DEFAULT_HOST = "http://100.64.0.1:30249"
+DEFAULT_HOST = "http://100.64.0.1:30088"
 DEFAULT_HEADERS = {
     "Content-Type": "application/json",
     "X-User-Id": "1",
@@ -72,7 +72,7 @@ class TripUser(HttpUser):
     def _create_order_preview(self):
         product = self._get_first_product()
         quantity = 1
-        product_id = product["productId"]
+        product_id = product["product_id"]
 
         preview_payload = {
             "products": [
